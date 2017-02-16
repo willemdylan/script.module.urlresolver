@@ -15,34 +15,12 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
+from __generic_resolver__ import GenericResolver
 
-import re
-from urlresolver import common
-from urlresolver.resolver import UrlResolver, ResolverError
-
-class IDoWatchResolver(UrlResolver):
+class IDoWatchResolver(GenericResolver):
     name = 'idowatch'
     domains = ['idowatch.net']
     pattern = '(?://|\.)(idowatch\.net)/(?:embed-)?([0-9a-zA-Z]+)'
-
-    def __init__(self):
-        self.net = common.Net()
-
-    def get_media_url(self, host, media_id):
-        web_url = self.get_url(host, media_id)
-        html = self.net.http_GET(web_url).content
-
-        if 'File Not Found' in html:
-            raise ResolverError('File Removed')
-            
-        match = re.search('''["']?sources['"]?\s*:\s*\[(.*?)\]''', html, re.DOTALL)
-        if match:
-            for match in re.finditer('''['"]?file['"]?\s*:\s*['"]?([^'"]+)''', match.group(1), re.DOTALL):
-                stream_url = match.group(1)
-                if not stream_url.endswith('smil'):
-                    return match.group(1) + '|User-Agent=%s' % (common.FF_USER_AGENT)
-
-        raise ResolverError('Unable to resolve idowatch link. Filelink not found.')
 
     def get_url(self, host, media_id):
         return 'http://idowatch.net/%s.html' % (media_id)

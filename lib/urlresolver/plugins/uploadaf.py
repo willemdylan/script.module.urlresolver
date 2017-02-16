@@ -39,7 +39,6 @@ class UploadAfResolver(UrlResolver):
         tries = 0
         while tries < MAX_TRIES:
             data = helpers.get_hidden(html)
-            data['method_free'] = 'Free Download >>'
             data.update(captcha_lib.do_captcha(html))
 
             html = self.net.http_POST(web_url, form_data=data).content
@@ -51,4 +50,4 @@ class UploadAfResolver(UrlResolver):
         raise ResolverError('Unable to resolve upload.af link. Filelink not found.')
 
     def get_url(self, host, media_id):
-        return 'http://upload.af/%s' % (media_id)
+        return 'https://upload.af/%s' % (media_id)

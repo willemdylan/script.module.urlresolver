@@ -27,19 +27,22 @@ For most cases you probably want to use :func:`urlresolver.resolve` or
 
 
 '''
+import re
+import urlparse
 import sys
 import os
 import xbmcgui
 import common
-import xml.dom.minidom
 from hmf import HostedMediaFile
 from urlresolver.resolver import UrlResolver
+from urlresolver.plugins.__generic_resolver__ import GenericResolver
 from plugins import *
 
 common.log_utils.log_notice('Initializing URLResolver version: %s' % (common.addon_version))
 MAX_SETTINGS = 75
 
 PLUGIN_DIRS = []
+host_cache = {}
 
 def add_plugin_dirs(dirs):
     global PLUGIN_DIRS
@@ -69,12 +72,12 @@ def relevant_resolvers(domain=None, include_universal=None, include_external=Fal
     if include_universal is None:
         include_universal = common.get_setting('allow_universal') == "true"
         
-    classes = UrlResolver.__class__.__subclasses__(UrlResolver)
+    classes = UrlResolver.__class__.__subclasses__(UrlResolver) + UrlResolver.__class__.__subclasses__(GenericResolver)
     relevant = []
     for resolver in classes:
         if include_disabled or resolver._is_enabled():
             if include_universal or not resolver.isUniversal():
-                if domain is None or (any(domain in res_domain.lower() for res_domain in resolver.domains) or '*' in resolver.domains):
+                if domain is None or ((domain and any(domain in res_domain.lower() for res_domain in resolver.domains)) or '*' in resolver.domains):
                     relevant.append(resolver)
 
     if order_matters:
@@ -177,6 +180,43 @@ def choose_source(sources):
         else:
             return False
 
+def scrape_supported(html, regex=None, host_only=False):
+    '''
+    returns a list of links scraped from the html that are supported by urlresolver
+    
+    args:
+        html: the html to be scraped
+        regex: an optional argument to override the default regex which is: href\s*=\s*["']([^'"]+
+        host_only: an optional argument if true to do only host validation vs full url validation (default False)
+    
+    Returns:
+        a list of links scraped from the html that passed validation
+    
+    '''
+    if regex is None: regex = '''href\s*=\s*['"]([^'"]+)'''
+    links = []
+    for match in re.finditer(regex, html):
+        stream_url = match.group(1)
+        host = urlparse.urlparse(stream_url).hostname
+        if host_only:
+            if host is None:
+                continue
+            
+            if host in host_cache:
+                if host_cache[host]:
+                    links.append(stream_url)
+                continue
+            else:
+                hmf = HostedMediaFile(host=host, media_id='dummy')  # use dummy media_id to allow host validation
+        else:
+            hmf = HostedMediaFile(url=stream_url)
+        
+        is_valid = hmf.valid_url()
+        host_cache[host] = is_valid
+        if is_valid:
+            links.append(stream_url)
+    return links
+
 def display_settings():
     '''
     Opens the settings dialog for :mod:`urlresolver` and its plugins.
@@ -207,12 +247,13 @@ def _update_settings_xml():
         '<?xml version="1.0" encoding="utf-8" standalone="yes"?>',
         '<settings>',
         '\t<category label="URLResolver">',
-        '\t\t<setting default="true" id="allow_universal" label="Enable Universal Resolvers" type="bool"/>',
-        '\t\t<setting default="true" id="use_cache" label="Use Function Cache" type="bool"/>',
-        '\t\t<setting id="reset_cache" type="action" label="Reset Function Cache" action="RunPlugin(plugin://script.module.urlresolver/?mode=reset_cache)"/>',
+        '\t\t<setting default="true" id="allow_universal" label="%s" type="bool"/>' % (common.i18n('enable_universal')),
+        '\t\t<setting default="true" id="auto_pick" label="%s" type="bool"/>' % (common.i18n('auto_pick')),
+        '\t\t<setting default="true" id="use_cache" label="%s" type="bool"/>' % (common.i18n('use_function_cache')),
+        '\t\t<setting id="reset_cache" type="action" label="%s" action="RunPlugin(plugin://script.module.urlresolver/?mode=reset_cache)"/>' % (common.i18n('reset_function_cache')),
         '\t\t<setting id="personal_nid" label="Your NID" type="text" visible="false"/>',
         '\t</category>',
-        '\t<category label="Universal Resolvers">']
+        '\t<category label="%s">' % (common.i18n('universal_resolvers'))]
 
     resolvers = relevant_resolvers(include_universal=True, include_disabled=True)
     resolvers = sorted(resolvers, key=lambda x: x.name.upper())
@@ -221,7 +262,7 @@ def _update_settings_xml():
             new_xml.append('\t\t<setting label="%s" type="lsep"/>' % (resolver.name))
             new_xml += ['\t\t' + line for line in resolver.get_settings_xml()]
     new_xml.append('\t</category>')
-    new_xml.append('\t<category label="Resolvers 1">')
+    new_xml.append('\t<category label="%s 1">' % (common.i18n('resolvers')))
 
     i = 0
     cat_count = 2
@@ -229,7 +270,7 @@ def _update_settings_xml():
         if not resolver.isUniversal():
             if i > MAX_SETTINGS:
                 new_xml.append('\t</category>')
-                new_xml.append('\t<category label="Resolvers %s">' % (cat_count))
+                new_xml.append('\t<category label="%s %s">' % (common.i18n('resolvers'), cat_count))
                 cat_count += 1
                 i = 0
             new_xml.append('\t\t<setting label="%s" type="lsep"/>' % (resolver.name))

@@ -15,7 +15,8 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
-import re
+
+from lib import helpers
 from urlresolver import common
 from urlresolver.resolver import UrlResolver, ResolverError
 
@@ -28,17 +29,21 @@ class FilehootResolver(UrlResolver):
         self.net = common.Net()
 
     def get_media_url(self, host, media_id):
+        headers = {'User-Agent': common.FF_USER_AGENT}
+
         web_url = self.get_url(host, media_id)
-        html = self.net.http_GET(web_url).content
+
+        html = self.net.http_GET(web_url, headers=headers).content
+
         if '404 Not Found' in html:
             raise ResolverError('The requested video was not found.')
 
-        pattern = "file\s*:\s*'([^']+)'\s*,\s*'provider'\s*:\s*'http"
-        match = re.search(pattern, html)
-        if match:
-            return match.group(1)
+        url = helpers.scrape_sources(html)
+
+        if url:
+            return url[0][1] + helpers.append_headers(headers)
 
         raise ResolverError('No video link found.')
 
     def get_url(self, host, media_id):
-        return 'http://%s/embed-%s.html' % (host, media_id)
+        return self._default_get_url(host, media_id)

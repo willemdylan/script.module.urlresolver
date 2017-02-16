@@ -18,16 +18,16 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
 import re
-from lib import helpers
 import random
-from lib.aa_decoder import AADecoder
+from lib import helpers
 from urlresolver import common
 from urlresolver.resolver import UrlResolver, ResolverError
 
+
 class RapidVideoResolver(UrlResolver):
     name = "rapidvideo.com"
-    domains = ["rapidvideo.com"]
-    pattern = '(?://|\.)(rapidvideo\.com)/(?:embed/|)?([0-9A-Za-z]+)'
+    domains = ["rapidvideo.com", "raptu.com"]
+    pattern = '(?://|\.)((?:rapidvideo|raptu)\.com)/(?:embed/|\?v=)?([0-9A-Za-z]+)'
 
     def __init__(self):
         self.net = common.Net()
@@ -42,18 +42,10 @@ class RapidVideoResolver(UrlResolver):
         headers['Referer'] = web_url
         post_url = web_url + '#'
         html = self.net.http_POST(post_url, form_data=data, headers=headers).content.encode('utf-8')
-        match = re.search('hide\(\);(.*?;)\s*//', html, re.DOTALL)
-        if match:
-            dtext = AADecoder(match.group(1)).decode()
-            match = re.search('"?sources"?\s*:\s*\[(.*?)\]', dtext, re.DOTALL)
-            if match:
-                for match in re.finditer('''['"]?file['"]?\s*:\s*['"]([^'"]+)['"][^}]*['"]?label['"]?\s*:\s*['"]([^'"]*)''', match.group(1), re.DOTALL):
-                    stream_url, _label = match.groups()
-                    stream_url = stream_url.replace('\/', '/')
-                    stream_url += '|User-Agent=%s&Referer=%s' % (common.FF_USER_AGENT, web_url)
-                    return stream_url
-
-        raise ResolverError('File Not Found or removed')
+        sources = helpers.parse_sources_list(html)
+        try: sources.sort(key=lambda x: x[0], reverse=True)
+        except: pass
+        return helpers.pick_source(sources)
 
     def get_url(self, host, media_id):
-        return 'https://www.rapidvideo.com/embed/%s' % media_id
+        return self._default_get_url(host, media_id, template='https://www.raptu.com/embed/{media_id}')
